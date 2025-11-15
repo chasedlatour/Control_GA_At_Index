@@ -10,7 +10,7 @@ library(renv)
 
 # Set target options:
 tar_option_set(
-  packages = c("tidyverse") # Packages that your targets need for their tasks.
+  packages = c("tidyverse","survival") # Packages that your targets need for their tasks.
 )
 
 # Run the R scripts in the R/ folder with your custom functions:
