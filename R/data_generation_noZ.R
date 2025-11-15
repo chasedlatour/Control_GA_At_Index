@@ -106,7 +106,7 @@ generate_pregs <- function(sim_id, n, prob_enter, p_loss, shape_loss,
 
 
 test <- generate_pregs(sim_id = 1, n=20000, #prob_enter = rep(0.125, 8),
-                       prob_enter=c(0.3, 0.25, 0.2, 0.05, 0.05, 0.05, 0.05, 0.05),
+                       prob_enter=c(0.25, 0.2, 0.2, 0.05, 0.05, 0.05, 0.1, 0.1),
                        p_loss = 0.2, shape_loss = 0.33,
                p_ptb = 0.13, first_ga = 15, weeks = seq(15,22, by=1),
                shape_del = 20, # 0.4
