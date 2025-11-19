@@ -19,18 +19,21 @@
 sim_id <- 1
 n <- 200
 prob_enter <- c(0.2, 0.2, 0.2, 0.2, 0.2)
-p_ptb<- 0.2 # probability of delivery by 37 weeks gestation (i.e., preterm birth)
+p_ptb0<- 0.2 # probability of delivery by 37 weeks gestation (i.e., preterm birth)
+p_ptb1<- 0.1 # probability of delivery by 37 weeks gestation (i.e., preterm birth)
 cenrate <- 0.1 # How much censoring
 first_ga <- 15
 weeks <- seq(15, 22, by=1)
 p_loss <- 0.05
 shape_loss <- 0.4
 shape_del <- 20
+shape_cens <- 0.2
 
 
 
-generate_pregs <- function(sim_id, n, prob_enter, p_loss, shape_loss,
-                           p_ptb, first_ga, weeks,
+
+generate_pregs <- function(sim_id, n, prob_enter, #p_loss, shape_loss,
+                           p_ptb0, ptb_tte_wk_change, first_ga, weeks,
                            shape_del, shape_cens, scale_cens){
   
   set.seed(128467)
@@ -40,38 +43,61 @@ generate_pregs <- function(sim_id, n, prob_enter, p_loss, shape_loss,
   id <- 1:n         # person-level identifier
   
   
-  ### GENERATE MISCARRIAGE OUTCOMES STARTING AT THE FIRST WEEK OF GESTATION
-  p_event <- p_loss # probability of an event (loss)
-  losstau <- (21-first_ga)/52 # Maximum time to miscarriage
-  alpha <- shape_loss # weibull shape for tiem from first GA to pregnancy loss
-  lambda <- (-log(1-p_event))^(1/alpha)/losstau
-  h <- exp(log(lambda))
-  
-  # Generate the time to miscarriage
-  time_to_miscarriage <- rweibull(n, shape = alpha, scale = 1/h)
+  # ### GENERATE MISCARRIAGE OUTCOMES STARTING AT THE FIRST WEEK OF GESTATION
+  # p_event <- p_loss # probability of an event (loss)
+  # losstau <- (21-first_ga)/52 # Maximum time to miscarriage, transform to year timescale
+  # alpha <- shape_loss # weibull shape for tiem from first GA to pregnancy loss
+  # lambda <- (-log(1-p_event))^(1/alpha)/losstau
+  # h <- exp(log(lambda))
+  # 
+  # # Generate the time to miscarriage from first_ga
+  # time_to_miscarriage <- rweibull(n, shape = alpha, scale = 1/h)
   
   ### GENERATE DELIVERY OUTCOMES STARTING AT THE FIRST WEEK OF GESTATION
   
   # Create parameters for preterm birth generation
-  p_event <- p_ptb # probability of an event (preterm birth) 
+  p_event <- p_ptb0 # probability of an event (preterm birth) 
   birthtau <- (37-first_ga)/52 #Maximum pregnancy duration in years
   alpha <- shape_del # weibull shape for time from 16 weeks of gestation to outcome 0.4
   lambda <- (-log(1-p_event))^(1/alpha)/birthtau   # weibull scale for time to PTB
   h <- exp(log(lambda)) 
   
-  # Generate the time to delivery
-  time_to_event <- rweibull(n, shape=alpha, scale=1/h)        # time to delivery
+  # Generate the time to delivery from first_ga
+  time_to_event <- rweibull(n, shape=alpha, scale=1/h)        # time to delivery from first_ga
   
   # Create an indicator for PTB in a setting without censoring -- WE INCLUDE MISCARRIAGE
   # IN THE DEFINITION OF PTB FOR THIS EXAMPLE
-  ptb_nocens <- ifelse(pmin(time_to_event,time_to_miscarriage) > birthtau, 0, 1)
-  tte_ptb_nocens <- ifelse(ptb_nocens == 1, pmin(time_to_event, time_to_miscarriage), birthtau)
+  # ptb_nocens_t0 <- ifelse(pmin(time_to_event,time_to_miscarriage) > birthtau, 0, 1)
+  # tte_ptb_nocens_t0 <- ifelse(ptb_nocens_t0 == 1, pmin(time_to_event, time_to_miscarriage), birthtau)
+  ptb_nocens_t0 <- ifelse(time_to_event > birthtau, 0, 1)
+  tte_ptb_nocens_t0 <- ifelse(ptb_nocens_t0 == 1, time_to_event, birthtau) # from first_ga
+  
   
  
   ### GENERATE THEIR ACTUAL GESTATIONAL WEEK AT ENROLLMENT, independent of when they had an outcome
   
   mat <- rmultinom(n=n, size=1, prob_enter)
   ga_entry <- weeks[max.col(t(mat))]
+  
+  
+  ### DETERMINE IF THE PERSON WOULD HAVE ENTERED THE TRIAL
+  exclude <- ifelse((tte_ptb_nocens_t0*52) < ga_entry, 1, 0) # Transform tte_ptb_nocens_t0 to weeks timescale
+  
+  
+  
+  ## GENERATE THEIR POST-TREATMENT DELIVERY TIME
+  # We assume that treatment delays the time to delivery by ptb_tte_wk_change weeks
+  
+  # First determine the time-to-delivery from ga_entry
+  time_to_del <- ((first_ga/52) + time_to_event) - ga_entry/52 
+      # # Calculate the gestational age at delivery and then Subtract the gestational age at trial entry
+  # Determine the time time-to-delivery from ga_entry after treatment (i.e., ga_entry)
+  time_to_event_t1 <- time_to_del + ptb_tte_wk_change/52
+  
+  # Create an indicator for PTB in a setting without censoring under treatment
+  ptb_nocens_t1 <- ifelse(time_to_event_t1 > ((37-ga_entry)/52), 0, 1)
+  tte_ptb_nocens_t1 <- ifelse(ptb_nocens_t1 == 1, time_to_event_t1, ((37-ga_entry)/52))
+  
   
   ### GENERATE LTFU AT THE START OF ENROLLMENT FOR EACH PERSON, NOT 16 WEEKS GESTATION
   
@@ -81,13 +107,15 @@ generate_pregs <- function(sim_id, n, prob_enter, p_loss, shape_loss,
   ### NOW DETERMINE THEIR OBSERVED OUTCOME, APPLYING TIME TO CENSORING AFTER ENROLLMENT
   time_to_censor_ga <- (ga_entry - first_ga)/52 + time_to_censor
   
-  # Observed event times and types if all enrolled at 16 weeks gestation
-  tte <- pmin(tte_ptb_nocens, time_to_censor_ga, birthtau)
+  
+  
+  # Observed event times and types based on ga at enrollment
+  tte <- pmin(tte_ptb_nocens_t1, time_to_censor_ga, ((37-ga_entry)/52))
   t_weeks <- first_ga + (tte * 52)   # Gestational age at end of follow-up
-  outcome <- ifelse(ptb_nocens == 1 & tte == tte_ptb_nocens,
+  outcome <- ifelse(ptb_nocens_t1 == 1 & tte == tte_ptb_nocens_t1,
                     1,
                     ifelse(
-                      ptb_nocens == 0 & tte == birthtau,
+                      ptb_nocens_t1 == 0 & tte == ((37-ga_entry)/52),
                       2,
                       0
                     ))
@@ -95,34 +123,45 @@ generate_pregs <- function(sim_id, n, prob_enter, p_loss, shape_loss,
  
   #### Make the base dataset
 
-  data <- tibble(n_sim, id, ga_entry, ptb_nocens, outcome, t_weeks) %>% 
+  data <- tibble(n_sim, id, ga_entry, ptb_nocens_t0, ptb_nocens_t1, outcome, t_weeks) %>% 
     # Calculate time to event from ga_entry
     mutate(tte = t_weeks - ga_entry) %>% 
     # Exclude those individuals who experienced a delivery before trial entry
-    filter(tte > 0)
+    filter(exclude == 0)
   
   return(data)
 }
 
 
-test <- generate_pregs(sim_id = 1, n=20000, #prob_enter = rep(0.125, 8),
-                       prob_enter=c(0.25, 0.2, 0.2, 0.05, 0.05, 0.05, 0.1, 0.1),
-                       p_loss = 0.2, shape_loss = 0.33,
-               p_ptb = 0.13, first_ga = 15, weeks = seq(15,22, by=1),
-               shape_del = 20, # 0.4
-               shape_cens = 0.4, scale_cens = 10) # 12, 0.4
-               # shape_cens = 3, scale_cens = 0.7)
+# test <- generate_pregs(sim_id = 1, n=20000, #prob_enter = rep(0.125, 8),
+#                        prob_enter=c(0.25, 0.2, 0.2, 0.05, 0.05, 0.05, 0.1, 0.1),
+#                        p_loss = 0.2, shape_loss = 0.33,
+#                p_ptb = 0.13, first_ga = 15, weeks = seq(15,22, by=1),
+#                shape_del = 20, # 0.4
+#                shape_cens = 0.4, scale_cens = 10) # 12, 0.4
+#                # shape_cens = 3, scale_cens = 0.7)
+
+test <- generate_pregs(sim_id = 1, n=20000, prob_enter=c(0.05, 0.05, 0.05, 0.1, 0.1, 0.2, 0.2, 0.25),
+                       p_ptb0 = 0.5, ptb_tte_wk_change = 1, first_ga = 15, weeks = seq(15,22, by=1),
+                       shape_del = 10, shape_cens = 0.4, scale_cens = 10) # 12, 0.4
+
+
+
 
 
 prop.table(table(test$outcome))
 table(test$ga_entry)
-mean(test$ptb_nocens)
+mean(test$ptb_nocens_t1)
+mean(test$ptb_nocens_t0)
 prop.table(table(test$ga_entry, test$outcome))
 prop.table(table(test$ga_entry[test$outcome == 0]))
 # Look at outcome risk by GA at entry
 test %>% 
   group_by(ga_entry) %>% 
-  summarize(risk = mean(ptb_nocens))
+  summarize(
+    risk_t1 = mean(ptb_nocens_t1),
+    risk_t0 = mean(ptb_nocens_t0)
+  )
 
 
 
@@ -130,29 +169,6 @@ test %>%
 
 
 # Estimate the probability of preterm birth using an AJ estimator, not adjusting for gestational age at study entry
-
-mod_noga <- summary(survfit(Surv(tte, factor(outcome)) ~ 1, data=test))
-# Now get the cumulative incidence overall
-prob <- tail(data.frame(r = mod_noga$pstate[,"1"]), 1)
-
-# output side by side
-
-mean(test$ptb_nocens) # Probability without censoring (truth)
-prob
-
-
-# 
-# # What's the distribution of the censoring times by GA at cohort entry?
-# test %>% 
-#   filter(outcome == 0) %>% 
-#   group_by(ga_entry) %>% 
-#   summarize(mean = mean(tte),
-#             median = median(tte))
-# 
-# 
-# 
-
-# Estimate risks from AJ estimator without standardization for GA at entry
 
 mod_noga <- summary(survfit(Surv(tte, factor(outcome)) ~ 1, data=test))
 # Now get the cumulative incidence overall
@@ -192,9 +208,19 @@ standardized <- merge %>%
 
 # output side by side
 
-mean(test$ptb_nocens) # Probability without censoring (truth)
+mean(test$ptb_nocens_t1) # Probability without censoring (truth)
 prob
 standardized
+
+
+
+
+
+
+
+
+
+
 
 
 
