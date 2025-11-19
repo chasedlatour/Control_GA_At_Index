@@ -28,7 +28,7 @@ p_loss <- 0.05
 shape_loss <- 0.4
 shape_del <- 20
 shape_cens <- 0.2
-
+ptb_tte_wk_change <- c(2, 2, 1, 1, 0)
 
 
 
@@ -92,7 +92,7 @@ generate_pregs <- function(sim_id, n, prob_enter, #p_loss, shape_loss,
   time_to_del <- ((first_ga/52) + time_to_event) - ga_entry/52 
       # # Calculate the gestational age at delivery and then Subtract the gestational age at trial entry
   # Determine the time time-to-delivery from ga_entry after treatment (i.e., ga_entry)
-  time_to_event_t1 <- time_to_del + ptb_tte_wk_change/52
+  time_to_event_t1 <- time_to_del + ptb_tte_wk_change[max.col(t(mat))]/52
   
   # Create an indicator for PTB in a setting without censoring under treatment
   ptb_nocens_t1 <- ifelse(time_to_event_t1 > ((37-ga_entry)/52), 0, 1)
@@ -141,9 +141,10 @@ generate_pregs <- function(sim_id, n, prob_enter, #p_loss, shape_loss,
 #                shape_cens = 0.4, scale_cens = 10) # 12, 0.4
 #                # shape_cens = 3, scale_cens = 0.7)
 
-test <- generate_pregs(sim_id = 1, n=20000, prob_enter=c(0.05, 0.05, 0.05, 0.1, 0.1, 0.2, 0.2, 0.25),
-                       p_ptb0 = 0.5, ptb_tte_wk_change = 1, first_ga = 15, weeks = seq(15,22, by=1),
-                       shape_del = 10, shape_cens = 0.4, scale_cens = 10) # 12, 0.4
+test <- generate_pregs(sim_id = 1, n=20000, prob_enter=c(0.25, 0.2, 0.2, 0.05, 0.05, 0.05, 0.1, 0.1),
+                       p_ptb0 = 0.5, ptb_tte_wk_change = c(3, 3, 3, 1, 1, 1, 0, 0), 
+                       first_ga = 15, weeks = seq(15,22, by=1),
+                       shape_del = 12, shape_cens = 0.4, scale_cens = 10) # 12, 0.4
 
 
 
@@ -153,7 +154,7 @@ prop.table(table(test$outcome))
 table(test$ga_entry)
 mean(test$ptb_nocens_t1)
 mean(test$ptb_nocens_t0)
-prop.table(table(test$ga_entry, test$outcome))
+#prop.table(table(test$ga_entry, test$outcome))
 prop.table(table(test$ga_entry[test$outcome == 0]))
 # Look at outcome risk by GA at entry
 test %>% 
